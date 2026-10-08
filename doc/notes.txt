@@ -11,8 +11,23 @@
               pwr down (sck was  high for more than 6ous)    
                   | scl down /activate , sdo shall come 1 when data rdy 
             
-         
-         
- f103 mosi is std  input not alt ,  it can be used direct to check the rdy
+03 mosi is std  input not alt ,  it can be used direct to check the rdy
  on some other stm32 it's an alt io not readable w/o chngang its type 
  using spi rd (while sending 0) is more universale to check rdyness but is slower/Assynch
+ 
+  pd to data rdy => ~500ms 
+ 
+ pwr_down mode , wfi  no ùeassure  pwr cons 3 - 4mA       
+         
+ 
+ empty val 	Hex:0xedb8ed 
+ 	Hex:0xedb8ce
+ 	swicth to sinle 
+ 	0xedb907  1st
+ 	0xedb8bc  next
+ 	0xedb891
+ 	+40g 
+ 	0xee68a0
+ 	0xee68ef
+ 	0g
+ 	0xedb8ae
