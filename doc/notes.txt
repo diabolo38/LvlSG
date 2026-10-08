@@ -1,0 +1,18 @@
+    [state]  | transition/cond             
+                 [ wait rdy ]
+                    | (( sdo go high)
+                   measure   
+                    |    | ( spi complete with tx last = 0)
+ (spi done tx=0xFF) |   idlle   (sck is low)
+                    | 
+               to sleep  (sck got high) must wait 60 us  fm rise  to go be in pwr down 
+                   |       spec does not say what happen to sdo
+                   | (60us fm rise)   
+              pwr down (sck was  high for more than 6ous)    
+                  | scl down /activate , sdo shall come 1 when data rdy 
+            
+         
+         
+ f103 mosi is std  input not alt ,  it can be used direct to check the rdy
+ on some other stm32 it's an alt io not readable w/o chngang its type 
+ using spi rd (while sending 0) is more universale to check rdyness but is slower/Assynch
