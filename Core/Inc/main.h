@@ -57,9 +57,17 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define USR_BUT_Pin GPIO_PIN_2
+#define USR_BUT_GPIO_Port GPIOA
+#define LCD_PWR2_Pin GPIO_PIN_3
+#define LCD_PWR2_GPIO_Port GPIOB
+#define LCD_PWR1_Pin GPIO_PIN_4
+#define LCD_PWR1_GPIO_Port GPIOB
+#define LCD_PWR0_Pin GPIO_PIN_5
+#define LCD_PWR0_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-
+#define USR_BUT_IRQN EXTI2_IRQn
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

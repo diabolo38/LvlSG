@@ -55,6 +55,7 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern RTC_HandleTypeDef hrtc;
 extern DMA_HandleTypeDef hdma_spi1_tx;
 extern DMA_HandleTypeDef hdma_spi1_rx;
 extern SPI_HandleTypeDef hspi1;
@@ -201,6 +202,20 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles RTC global interrupt.
+  */
+void RTC_IRQHandler(void)
+{
+  /* USER CODE BEGIN RTC_IRQn 0 */
+
+  /* USER CODE END RTC_IRQn 0 */
+  HAL_RTCEx_RTCIRQHandler(&hrtc);
+  /* USER CODE BEGIN RTC_IRQn 1 */
+
+  /* USER CODE END RTC_IRQn 1 */
+}
+
+/**
   * @brief This function handles DMA1 channel2 global interrupt.
   */
 void DMA1_Channel2_IRQHandler(void)
@@ -240,6 +255,20 @@ void SPI1_IRQHandler(void)
   /* USER CODE BEGIN SPI1_IRQn 1 */
 
   /* USER CODE END SPI1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles RTC alarm interrupt through EXTI line 17.
+  */
+void RTC_Alarm_IRQHandler(void)
+{
+  /* USER CODE BEGIN RTC_Alarm_IRQn 0 */
+
+  /* USER CODE END RTC_Alarm_IRQn 0 */
+  HAL_RTC_AlarmIRQHandler(&hrtc);
+  /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
+
+  /* USER CODE END RTC_Alarm_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

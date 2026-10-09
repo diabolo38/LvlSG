@@ -17,8 +17,15 @@
  
   pd to data rdy => ~500ms 
  
- pwr_down mode , wfi  no ùeassure  pwr cons 3 - 4mA       
-         
+ pwr_down mode , wfi  no meassure  pwr cons 3 - 4mA       
+ 711 cont mode is about 4mA
+ 711 no pwr pwr  not observable   ( or feed via spi mosi)     
+ 
+ swicth to new board  cos c6f103 lsi dead 
+ 
+ wfi mode avc cur ~ 3mA
+ stop mode (no dbg) ~ 1.5mA (bled off rled on) 
+ on measure current  ~ 20 30mA 
  
  empty val 	Hex:0xedb8ed 
  	Hex:0xedb8ce
@@ -31,3 +38,4 @@
  	0xee68ef
  	0g
  	0xedb8ae
+ 	=> 1g =1K unit check by applying 40g and  30g 
