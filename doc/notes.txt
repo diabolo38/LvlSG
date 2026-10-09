@@ -1,4 +1,6 @@
-    [state]  | transition/cond             
+    [state]  
+    | (transition/cond )    
+          
                  [ wait rdy ]
                     | (( sdo go high)
                    measure   
