@@ -28,7 +28,9 @@
 /* USER CODE BEGIN Includes */
 #include "blackpil.h"
 #include <string.h>
+#include <stdio.h>
 #include "ssd1306.h"
+#include "ssd1306_fonts.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,6 +41,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define SYS_STAT(x) (void)0
+//#define  LCD_ALWAYS_ON
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -60,6 +63,8 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+int MeasPeriodSec=60;
 
 struct task_t {
 	union {
@@ -116,10 +121,10 @@ int Hx711Read( struct Hx711_t *dev, int RateCtrl){
 	}
 	// quick dirty test measure rate 1 per sec
 	now = HAL_GetTick();
-	if( RateCtrl && now- dev->LastTick   < 500 )
+	if( RateCtrl && now- dev->LastTick   < 200 )
 		return 1;
 	dev->LastTick = now;
-	task.acive.SG = 1; // set us active in case measure get started  by user activity
+	task.acive.SG = 1; // set us active in case measure get started  by user activity we ust not stop until this measuee got consumed
 
 	//if dev in pwr down send 0 lower sck and wait for rdy
 	if( dev->state == Hx711_PwrDown ){
@@ -155,9 +160,6 @@ int Hx711Read( struct Hx711_t *dev, int RateCtrl){
 	// conv ready an be check by sending a 0x00 aka no sck and reading data
 	// if any bit is 0 so whal be bit 8 conv is rdy
 
-	//add a 0x80 for last sck  but this what keep  mosi low
-//	dev->CkBuf[dev->FrontBytes+i]=0x80;
-//	i++;
 	if( dev->ContMode ){
 		//add extra 0x00 to keep active else it will stay high
 		dev->CkBuf[dev->FrontBytes+i]=0x00;
@@ -182,8 +184,8 @@ int Hx711PwrDown(struct Hx711_t  *dev){
 	//todo check  we're done on spi / dev state to ensure sae to change state and use spi to rise sck
 	uint8_t d=0xFF;
 	rc = HAL_SPI_Transmit(dev->hspi, &d, 1, 2);
-	//decide if to used dma and many 0xFF to ensure delay or not
-	//todo state
+	HAL_Delay(2);
+	//fixme decide if to used dma  many 0xFF or other means to ensure delay or not
 	dev->state  = Hx711_PwrDown;
 	return rc;
 }
@@ -262,22 +264,36 @@ void LcdPwrOn(){
 	  HAL_GPIO_WritePin(GPIOB, LCD_PWR0_Pin|LCD_PWR1_Pin|LCD_PWR2_Pin, GPIO_PIN_SET);
 	  lcd.PwrOn=1;
 	  lcd.Update=1;
-	  // ssd1306_Init();
+	  ssd1306_Init();
 	}
 }
 
 void LcdPwrDown(){
 	HAL_GPIO_WritePin(GPIOB, LCD_PWR0_Pin|LCD_PWR1_Pin|LCD_PWR2_Pin, GPIO_PIN_RESET);
+#ifndef LCD_ALWAYS_ON
 	lcd.PwrOn =0;
+#endif
 	lcd.Update =0;
 
 }
 
 void LcdUpdate(){
+	char s[32];
+	int g, dg;
 	if( lcd.PwrOn != 0 && lcd.Update){
+		ssd1306_Fill(Black);
+		ssd1306_SetCursor(32, 0);
+		g = (int)hx711.Weight/1000;
+		dg = (hx711.Weight - g*1000 )/100;
+		sprintf(s,"w %d.%d", g, dg);
+		ssd1306_WriteString(s, Font_7x10, White);
+		ssd1306_SetCursor(32, 11);
+		sprintf(s,"r %x", (unsigned)hx711.Value);
+		ssd1306_WriteString(s, Font_7x10, White);
 		// current lvl % value raw ?  drawing ?
 		// pump on time
 		// total run time ?
+		ssd1306_UpdateScreen();
 
 	}
 	lcd.Update = 0; //clr req even we are off
@@ -314,13 +330,29 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == USR_BUT_Pin){
 	  StopResume();
+	  task.acive.user = 1; //safer that ony relying i/o chg is seen on the main loop
   }
 }
 
 
+struct SgTask_t {
+#define SG_REP_4_AVG	3
+	int RepMeas; // on wake up run  this amount of measure in cont mode then step to single/off
+
+} Task_SG;;
+
+void SgWakeUp(){
+	if( task.acive.SG ==0   ){
+		task.acive.SG = 1;
+		//shall we take care we lay be in interactive mdoe so already in cont mode and averaged value ?
+		Task_SG.RepMeas = SG_REP_4_AVG;
+		hx711.ContMode = 1;
+	}
+}
 
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc){
 	StopResume();
+	SgWakeUp();
 	task.acive.SG = 1;
 	SetLed(0); //put on
 }
@@ -365,7 +397,7 @@ void RtcSetNextWake(){
 	RTC_AlarmTypeDef alarm;
 	alarm.Alarm = 1;
 	HAL_RTC_GetTime(&hrtc, &alarm.AlarmTime, RTC_FORMAT_BIN);
-	RtcTimeAdd(&alarm.AlarmTime, 0,5);
+	RtcTimeAdd(&alarm.AlarmTime, 0, MeasPeriodSec);
 	HAL_RTC_SetAlarm_IT(&hrtc, &alarm, RTC_FORMAT_BIN);
 
 }
@@ -373,28 +405,33 @@ void RtcSetNextWake(){
 struct UsrTask_t {
 	unsigned PrevBut : 1;
 	uint32_t TikcChg; //tick last user buttton chg /Activate
+	uint32_t OnTime;
 	#define	USER_OFF_MSEC	5000 //for debug dev use 5 sec
-} UsrTask;
+} UsrTask = { .OnTime= 1000*15 };
+
+void InteractiveEnd(){
+	LcdPwrDown();       // turn lcd off
+	task.acive.user =0;
+}
 
 void Task_User(){
 	uint32_t now=HAL_GetTick();
 
 	int but = HAL_GPIO_ReadPin(USR_BUT_GPIO_Port, USR_BUT_Pin) != 0;
-	if( but && !UsrTask.PrevBut ){
+	if( but != UsrTask.PrevBut ){
 		//mark  Activation
 		UsrTask.TikcChg = now;
 
 		task.acive.user = 1;
-		LcdPwrOn(); 	//if lcd was off it will kick the display update/Refresh
+		LcdPwrOn(); 	//if lcd was off it will kick the display update/Refresh if on nothing
 	}
 	else {
 		//no chg for more than user on time , shall condition to buton is not pressed ?
-		if( now - UsrTask.TikcChg > USER_OFF_MSEC ) {
-			// turn lcd off , suspend ourlsef
-			LcdPwrDown();
-			task.acive.user =0;
+		if( task.acive.user) {
+			if( now - UsrTask.TikcChg > UsrTask.OnTime ) {
+				InteractiveEnd();
+			}
 		}
-		//
 	}
 	UsrTask.PrevBut = but;
 }
@@ -402,10 +439,13 @@ void Task_User(){
 
 void EnterStop(){
 	//Ensure wake condition  button rtc (if not yet on)
+	Hx711PwrDown(&hx711);
+
 	HAL_SuspendTick();
 	__HAL_GPIO_EXTI_CLEAR_IT(USR_BUT_Pin);
 	HAL_NVIC_ClearPendingIRQ(USR_BUT_IRQN);
 	HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
+;
 
 	SetLed(1); // turn led off
 	RtcSetNextWake();
@@ -414,6 +454,22 @@ void EnterStop(){
 	}
 	else {
 		__WFI();
+	}
+}
+
+void OnDataRdy(){
+	lcd.Update = 1; // mark lcd to be update
+	hx711.DataRdy = 0 ;
+	//handle pump activation on/off  timer when lvl is high
+	if( Task_SG.RepMeas  ){
+	  Task_SG.RepMeas--;
+	  // hx711.ContMode = 0; // after this swicth to power down
+	  // => this set and measure can race with user change and brake "60us" pwr donw pulse rules if not handle
+	  // make the magaement more complex it is much safer/Simpler to be alays in cont mode and force pd when to stop
+	  // with limited risk sck high > 60 us if we ahve already set next wake and took long
+	}
+	if( Task_SG.RepMeas ==0 ){
+	  task.acive.SG = 0; // out ourself off
 	}
 }
 /* USER CODE END 0 */
@@ -453,10 +509,15 @@ int main(void)
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   LedInit();
-  hx711.ContMode = 0;
+  hx711.ContMode = 1;
   Hx711PwrDown(&hx711);
   HAL_Delay(2); //Sensure we is down on  boot
-  SetLed(1); //oc 1 mean off
+
+  //strat in user interactive mode led on
+  task.acive.user = 1 ; // keep mcu not sleeping at boot seethis can help debuger atatchement after reser button issue if we enter stop to fast
+  LcdPwrOn(); // boot up with lcd
+  SetLed(0);   // is revert led ctrl 0= on
+  HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -483,10 +544,7 @@ int main(void)
 		  Hx711PwrDown(&hx711);
 	  }
 	  if( hx711.DataRdy ){
-		  lcd.Update = 1; // mark lcd to be update
-		  //handle pump activation on/off  timer when lvl is high
-		  hx711.DataRdy = 0 ;
-		  task.acive.SG = 0;
+		  OnDataRdy();
 	  }
 	  if( task.acive.SG || task.acive.user ){
 		  Hx711Read(&hx711, 1); //read w/o rate controle

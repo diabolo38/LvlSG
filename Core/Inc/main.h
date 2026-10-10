@@ -59,6 +59,7 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define USR_BUT_Pin GPIO_PIN_2
 #define USR_BUT_GPIO_Port GPIOA
+#define USR_BUT_EXTI_IRQn EXTI2_IRQn
 #define LCD_PWR2_Pin GPIO_PIN_3
 #define LCD_PWR2_GPIO_Port GPIOB
 #define LCD_PWR1_Pin GPIO_PIN_4

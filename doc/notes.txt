@@ -1,24 +1,56 @@
-    [state]  
+
+   
+ LCD Intrerface 
+ ===============
+ I2C
+ ----
+    PB6     ------> I2C1_SCL
+    PB7     ------> I2C1_SDA
+    
+ pwr
+ ---    
+#define LCD_PWR2_Pin GPIO_PIN_3
+#define LCD_PWR2_GPIO_Port GPIOB
+#define LCD_PWR1_Pin GPIO_PIN_4
+#define LCD_PWR1_GPIO_Port GPIOB
+#define LCD_PWR0_Pin GPIO_PIN_5
+#define LCD_PWR0_GPIO_Port GPIOB
+
+25mA max per io so even 1  2 shall be enought base on amount of pixel on 
+
+Hx711 driver
+=============
+     
+F103 mosi is std  input not alt ,  it can be used direct to check the rdy
+ on some other stm32 it's an alt io not readable w/o changing  its type 
+ using spi rd (while sending 0) is more universale to check readyness but is slower/Assynch
+ 
+  pd to data rdy => ~500ms 
+  back yo back dt rdy 100ms 10HZ rate
+  
+  FSM draft 
+  ----------
+  FSM draft for full assynch  task driven 
+   
+      [state]  
     | (transition/cond )    
           
                  [ wait rdy ]
-                    | (( sdo go high)
+                    | (( sdo go high)/write to spi 0 read expect a "1"
                    measure   
                     |    | ( spi complete with tx last = 0)
- (spi done tx=0xFF) |   idlle   (sck is low)
+ (spi done on FF)   |   idlle   (sck is low)----> wait rdy 
                     | 
-               to sleep  (sck got high) must wait 60 us  fm rise  to go be in pwr down 
+               to sleep  (sck got high) must wait 60 us  fm rise  to ensure  be in pwr down 
                    |       spec does not say what happen to sdo
                    | (60us fm rise)   
               pwr down (sck was  high for more than 6ous)    
-                  | scl down /activate , sdo shall come 1 when data rdy 
-            
-03 mosi is std  input not alt ,  it can be used direct to check the rdy
- on some other stm32 it's an alt io not readable w/o chngang its type 
- using spi rd (while sending 0) is more universale to check rdyness but is slower/Assynch
+                  | (scl down /activate) 
+                  |
+                  [wait rdy]
  
-  pd to data rdy => ~500ms 
- 
+ power consumption
+ =================
  pwr_down mode , wfi  no meassure  pwr cons 3 - 4mA       
  711 cont mode is about 4mA
  711 no pwr pwr  not observable   ( or feed via spi mosi)     
@@ -28,6 +60,12 @@
  wfi mode avc cur ~ 3mA
  stop mode (no dbg) ~ 1.5mA (bled off rled on) 
  on measure current  ~ 20 30mA 
+ 
+ pwr led out
+ ------------
+  stop mode < 1mA few 100uA up to 700uA (usb measure precision ...)
+  stop mode with debuger 0.9mA
+  wfi only 1.5mA
  
  empty val 	Hex:0xedb8ed 
  	Hex:0xedb8ce
