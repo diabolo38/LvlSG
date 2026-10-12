@@ -1,4 +1,35 @@
+   
+UI 
+===
 
+item
+-----
+Cal 0 => set 0% empty from cur value
+cal x% =>  10%, 20% , ..100%  steps => set  % from cur value
+auto => on, off (togle)
+man => on/off 
+pulse on time => acrtvate for fixed time 
+pulse time => 10 , 20 .... , 120 
+reset stat
+
+short + next item 
+  
+  AAAA  
+  BBBB 
+  CCCC
+
+
+  [BBBB]  -> B1111 , B2222
+  CCCC
+  
+        |BBB| revert full ine /Center 
+   [1111] 
+   222 
+   333   [] slow blink
+   
+long => activate , item  blink get underline(blink)
+long is active (pressed for > 1sec ) visual effect (no more blink/underline ?) so user can release  
+nothing more tan 5/6 sec " exit this level" back or exit to main ui  
    
  LCD Intrerface 
  ===============
@@ -20,17 +51,24 @@
 
 Hx711 driver
 =============
+ io 
+ --- 
      
-F103 mosi is std  input not alt ,  it can be used direct to check the rdy
- on some other stm32 it's an alt io not readable w/o changing  its type 
- using spi rd (while sending 0) is more universale to check readyness but is slower/Assynch
+F103 mosi is std  input not alt ,  io rd can be used direct to check the rdy
+ on some  stm32 it's an alt io, not readable w/o changing  its type 
+ => using spi rd (while sending 0) is more universale to check readyness but is slower potentialy Assynch
  
+timings
+--------
   pd to data rdy => ~500ms 
-  back yo back dt rdy 100ms 10HZ rate
+  back to back dt rdy 100ms 10HZ rate
   
-  FSM draft 
-  ----------
-  FSM draft for full assynch  task driven 
+FSM draft 
+----------
+  current implem is poll synch + assynch (wait complete few byte at spi hz aka few 100us, few ms) 
+  wait rdy is the longest part 500ms 100 ms (1st exit form pd ,back to back)
+    
+  FSM draft for full assynch task driven 
    
       [state]  
     | (transition/cond )    
@@ -67,15 +105,59 @@ F103 mosi is std  input not alt ,  it can be used direct to check the rdy
   stop mode with debuger 0.9mA
   wfi only 1.5mA
  
- empty val 	Hex:0xedb8ed 
- 	Hex:0xedb8ce
- 	swicth to sinle 
- 	0xedb907  1st
- 	0xedb8bc  next
- 	0xedb891
- 	+40g 
- 	0xee68a0
- 	0xee68ef
- 	0g
- 	0xedb8ae
- 	=> 1g =1K unit check by applying 40g and  30g 
+
+power options
+=============
+ 
+ Ext 12v bat
+-----------
+  lm2936-5 ldo ( vmax ok , thermal ok asuming <30mA pwr) 
+  connect 5V to 5v pin of f103 Blackpil with or w/o protect diode if to keep ability to connect usb .
+  
+  if power is loss during pump on (solar charger low bat potection) => stat will be loss, pump will turn off 
+  => ok accepable behavior but very likely after few sec/min bat pwr will come back and same will happen again
+  => possible oscilating on/off 
+  
+  Motor effect on ssd1306 oled?
+  ---------------------
+  With mcu builtin i2c pull up only and no care on ssd1306 wriring conection 
+  very likley i2c will broke when pump is on with more or less bad effect 
+  already seen  on similar project (display stuck + f/W slowness on main idle loop)
+  Pump motor cuasing emi  glicth on i2c line with ore or less bad effect
+   - with unmod ssd1306 driver the f/W can get stuck lon and indefitively on hal i2c very bad 
+     => modify driver to use acceptable time out yet full screen update can take  mcu for very long => potential anouing efgect on ui 
+     => modify more driver to better handle error at least not loop on usless time out acccess => less effect on main loop
+  
+  using ext pull up may limit this
+  putting the mcu + olded in a shiled alluiminum case and pup pwr mos in a seconf may to minimize issue.
+
+  => avoding to turn pump on when ui will totalyh eliminiated the problem 
+  but this is not compliant with manual triger of  pump by ui 
+  at worst the app will pwr down after some time (ui no acton delay) 
+  so user can press again button  shall turn off pum at first  before bring back user mode ui
+   
+   
+  
+tiny LiIon bat 
+--------------
+  connect 3v7 to 5V pin shall do f103 blabpill ldo shall provide 3v3 until bat good soc lvl 
+  if https://stm32-base.org/boards/STM32F103C8T6-Black-Pill.html inf correct 
+   - Dropout Voltage: 100mV@ IOUT =100mA
+   - Operating Voltage Range: 2V～6.0V 
+
+  on low bat likely the reg will stop regulating corectly  vdd may  fluctuate arround 3v4 3v0 
+  what should be ok for mcu 
+  
+  Can this  vdd lvl when not 3v3 regulated may  affect the hx711 gauge measure in some bad way ? 
+  mcu can monitor the vdd via the internal vref  adc and mitigate the effect .
+  
+  For local level metter  lcd w/o pump continuous control then  simply connect the bat via pwr swicth
+   f/W ill boot up display level for some time before entering low power regular  measure 
+   => risk if for user to leave pwr on 
+    => small mod on f/w to be always in user interfactive mode is the simplest work arround adpatation
+    
+ #solar pannel option 
+    with tp4056 module 
+    
+    assuing some 10mAH day with mcu continuos monitoring very samll even bad lighhted tiny pannel shall do
+    
