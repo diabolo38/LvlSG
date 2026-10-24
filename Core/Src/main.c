@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
+#include "hx711.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -66,160 +67,7 @@ void SystemClock_Config(void);
 
 int MeasPeriodSec=60;
 
-struct task_t {
-	union {
-		struct {
-			unsigned SG:1; // strain gauge actvbate by rtc wk up self clear when measure done
-			unsigned Lcd:1;
-			unsigned user:1;
-		};
-		uint32_t dw;
-	} acive;
-} task;
 
-enum Hx711State_e {
-	Hx711_On      = 0,
-	Hx711_PwrDown = 1,
-
-};
-
-struct Hx711_t {
-	SPI_HandleTypeDef *hspi;  // clock shall not exceed  10 MHz so that 2 clk 1 mosi 0.2us  > min th/tl  for hx711 ck (max is 50us)
-	uint8_t FrontBytes; // front byte count to get at leMHz 60us  so SCL high pule is seen as pwr down , reset  then re start  normal mode
-	// shall not be used if scaling is in place ? ref by https://github.com/crjeder/hx711_spi
-	unsigned RdInProgress : 1;
-	unsigned DataRdy      : 1;
-	unsigned ContMode     : 1; // when not set hx set in pwr donw after measure ( TODO 60us to be ensure)
-
-
-	unsigned WairRdyErr   : 1; // stikcy set if wait for rdy occur
-	unsigned DoMeasErr    : 1; // stikcy set if error in rxtx for meas
-
-
-	int ErrCnt;
-	int32_t Value;	// raw read
-
-	int32_t Weight;
-
-	uint32_t LastTick;
-	uint8_t *CkBuf;
-	uint8_t *DiBuf;
-
-	int state;
-
-	uint32_t RawOffset; //value for no weight
-
-};
-
-
-
-int Hx711Read( struct Hx711_t *dev, int RateCtrl){
-	int rc, i, nBytes;
-	uint32_t now;
-	if( dev->RdInProgress ){
-		return 1;
-	}
-	// quick dirty test measure rate 1 per sec
-	now = HAL_GetTick();
-	if( RateCtrl && now- dev->LastTick   < 200 )
-		return 1;
-	dev->LastTick = now;
-	task.acive.SG = 1; // set us active in case measure get started  by user activity we ust not stop until this measuee got consumed
-
-	//if dev in pwr down send 0 lower sck and wait for rdy
-	if( dev->state == Hx711_PwrDown ){
-		//fall scl byt writing 0
-		dev->CkBuf[0]=0;
-		rc = HAL_SPI_Transmit(dev->hspi, dev->CkBuf, 1, 2);
-		//todo handle err ?
-		dev->state = Hx711_On;
-	}
-	//Wait data rdy that is spi rd shall be all 0 or at least b0 = 0 fall on last bit while sending 00  to keep active
-	//f103 emilt what is teh rd buffer but otehr mcu lay differ
-	do{
-		dev->CkBuf[0]=0;
-		rc = HAL_SPI_TransmitReceive(dev->hspi, dev->CkBuf, dev->DiBuf, 1, 2);
-			//todo handle err ?
-	}while( dev->DiBuf[0]&1 && rc == 0);
-	// rc != 0 mean error in spi ?
-	//fixe we shall rise sck for non cont mode
-	if( rc ){
-		dev->WairRdyErr=1;
-		dev->ErrCnt++;
-		return -1;
-	}
-
-	memset(dev->CkBuf, 0, dev->FrontBytes);
-	for( i=0; i<24/4;i++)
-		dev->CkBuf[dev->FrontBytes+i]=0xAA;
-	// we have a small idle 1.12us  every 2  and last byte ( dma reload ? last process by irq ?)
-	// this can be limited by sending an extra 0x00 o all clk ecge will be same
-	//for scaling 1 2 3 extra clk shall be added so one byte with leading/trailing
-	//idle state of the mosi is last emited bit adding extra 0x00 or 0xFF => will help forcing start/idle ck state
-	//initial/reset can be obtained by sending enough (proch ) 0xFF to fill 60us
-	// conv ready an be check by sending a 0x00 aka no sck and reading data
-	// if any bit is 0 so whal be bit 8 conv is rdy
-
-	if( dev->ContMode ){
-		//add extra 0x00 to keep active else it will stay high
-		dev->CkBuf[dev->FrontBytes+i]=0x00;
-		i++;
-	}
-
-	dev->state = Hx711_On;
-	dev->RdInProgress = 1;
-	dev->DataRdy = 0;
-	nBytes = dev->FrontBytes+i;
-	rc = HAL_SPI_TransmitReceive_DMA(dev->hspi, dev->CkBuf, dev->DiBuf, nBytes);
-	if( rc != 0){
-		dev->RdInProgress = 0;
-		dev->ErrCnt++;
-		//fixme pwr off on ? may be hard to say we don't know what do is forcing pd may be a better option if ! cont mode
-	}
-	return rc;
-}
-
-int Hx711PwrDown(struct Hx711_t  *dev){
-	int rc;
-	//todo check  we're done on spi / dev state to ensure sae to change state and use spi to rise sck
-	uint8_t d=0xFF;
-	rc = HAL_SPI_Transmit(dev->hspi, &d, 1, 2);
-	HAL_Delay(2);
-	//fixme decide if to used dma  many 0xFF or other means to ensure delay or not
-	dev->state  = Hx711_PwrDown;
-	return rc;
-}
-
-void Hx711_SPiComplete(struct Hx711_t  *dev){
-	int i;
-	dev->RdInProgress = 0;
-
-	int c, bpos, bit, bitm;
-	uint32_t v;
-	// de-serialize data from spi read buffer
-	for(v=0,  i=0; i < 24; i++ ){
-		v<<=1;
-		bpos= dev->FrontBytes + i / 4; // one byte for 4 bits
-		c = dev->DiBuf[bpos];
-		// bit pos is (i %4) * 2 , we send 1 0 1 0 so wed read on 0101  bit 6 4 2 0   hx send msb first
-		bit = 6-(i % 4)*2;
-		bitm = 1 << bit;
-		if( c&bitm )
-			v|= 1;
-	}
-	dev->Value = v;
-	dev->Weight = dev->Value - dev ->RawOffset;
-
-	if( !dev->ContMode ){
-		dev->state= Hx711_PwrDown;
-		//fixme to pd before pd handlin ?ng
-	}
-	else {
-		dev->state= Hx711_On;
-	}
-	dev->DataRdy = 1;
-
-}
 
 /**SPI1 GPIO Configuration
 PA5     ------> SPI1_SCK
@@ -251,6 +99,7 @@ volatile struct Dbg_t  {
 	unsigned StopMode :1; //if not set then we don't go into stop simply use wfi aka debgu stop entering
 }Dbg ={ .StopMode = 1 };
 
+struct task_t task;
 
 struct Lcd_t {
 	unsigned PwrOn:1;
@@ -330,7 +179,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == USR_BUT_Pin){
 	  StopResume();
-	  task.acive.user = 1; //safer that ony relying i/o chg is seen on the main loop
+	  task.active.user = 1; //safer that ony relying i/o chg is seen on the main loop
   }
 }
 
@@ -342,8 +191,8 @@ struct SgTask_t {
 } Task_SG;;
 
 void SgWakeUp(){
-	if( task.acive.SG ==0   ){
-		task.acive.SG = 1;
+	if( task.active.SG ==0   ){
+		task.active.SG = 1;
 		//shall we take care we lay be in interactive mdoe so already in cont mode and averaged value ?
 		Task_SG.RepMeas = SG_REP_4_AVG;
 		hx711.ContMode = 1;
@@ -353,7 +202,7 @@ void SgWakeUp(){
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc){
 	StopResume();
 	SgWakeUp();
-	task.acive.SG = 1;
+	task.active.SG = 1;
 	SetLed(0); //put on
 }
 
@@ -411,7 +260,7 @@ struct UsrTask_t {
 
 void InteractiveEnd(){
 	LcdPwrDown();       // turn lcd off
-	task.acive.user =0;
+	task.active.user =0;
 }
 
 void Task_User(){
@@ -422,12 +271,12 @@ void Task_User(){
 		//mark  Activation
 		UsrTask.TikcChg = now;
 
-		task.acive.user = 1;
+		task.active.user = 1;
 		LcdPwrOn(); 	//if lcd was off it will kick the display update/Refresh if on nothing
 	}
 	else {
 		//no chg for more than user on time , shall condition to buton is not pressed ?
-		if( task.acive.user) {
+		if( task.active.user) {
 			if( now - UsrTask.TikcChg > UsrTask.OnTime ) {
 				InteractiveEnd();
 			}
@@ -469,7 +318,7 @@ void OnDataRdy(){
 	  // with limited risk sck high > 60 us if we ahve already set next wake and took long
 	}
 	if( Task_SG.RepMeas ==0 ){
-	  task.acive.SG = 0; // out ourself off
+	  task.active.SG = 0; // out ourself off
 	}
 }
 /* USER CODE END 0 */
@@ -514,7 +363,7 @@ int main(void)
   HAL_Delay(2); //Sensure we is down on  boot
 
   //strat in user interactive mode led on
-  task.acive.user = 1 ; // keep mcu not sleeping at boot seethis can help debuger atatchement after reser button issue if we enter stop to fast
+  task.active.user = 1 ; // keep mcu not sleeping at boot seethis can help debuger atatchement after reser button issue if we enter stop to fast
   LcdPwrOn(); // boot up with lcd
   SetLed(0);   // is revert led ctrl 0= on
   HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
@@ -528,7 +377,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  if( HAL_GPIO_ReadPin(USR_BUT_GPIO_Port, USR_BUT_Pin) != 0){
-		  task.acive.user=1;
+		  task.active.user=1;
 	  }
 	  if( Dbg.TogleLed ) {
 		  Dbg.TogleLed =0;
@@ -546,15 +395,15 @@ int main(void)
 	  if( hx711.DataRdy ){
 		  OnDataRdy();
 	  }
-	  if( task.acive.SG || task.acive.user ){
+	  if( task.active.SG || task.active.user ){
 		  Hx711Read(&hx711, 1); //read w/o rate controle
 	  }
-	  if( task.acive.user ){
+	  if( task.active.user ){
 		  Task_User();
 	  }
 	  LcdUpdate();
 	 //unless we are in user active lcd we don't kick measure before next period and datary +  RdInProgress  is our task bit
-	  if( task.acive.dw ) {
+	  if( task.active.dw ) {
 		  __WFI();
 	  }
 	  else {
