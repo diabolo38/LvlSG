@@ -152,6 +152,8 @@ void ee_test(){
 		i++;
 		memset(&Ref.ee_data, i, sizeof(Ref.ee_data)); //some chg in pattern
 	}while( EeFirstFree()!=NULL );
+	(void)ok;
+	(void)rc;
 
 }
 

@@ -16,11 +16,14 @@
 #endif
 
 /**
- * the EeData_t  struct must include all item to save by batch in the ee ( with limited chande mcu flahs as limites ersa reflasg cycle count )
+ * the EeData_t  struct must include all item to save by batch in the ee
  *
- * struct sized to be multiple of 2 or 4  (  stm32 flash  may  write/Ersae by 2 byte or page )
- * the flash memeory size constrain:
- *   - best be a multiple of the struct size ( simpler boudn check no ned to check stat +sz  strta < end enught )
+ * repeating the the ee data struct in 1+ flahs block/page mananing an erase engtri control flags
+ * help not  reaching Mcu flash  limited erase/write cycle count  limits
+ *
+ * struct sized to be multiple of 2 or 4  (  stm32 flash  may  write/Erase by 2 byte or page )
+ * the flash memory size constrain:
+ *   - best be a multiple of the struct size ( simpler bound check no need to check start +size  < end  is enough
  *   - must be an FLASHP_PAGE_SIZE multiple  for erase
  *
  * the ld shall provide the sylbol to locate the ee area and  teh ee sectiion + mem
@@ -64,7 +67,7 @@ struct EeData_t {
 	//update SetConfFromEe and SaveSetting when adding or modifying here
 
 	//!<  adjust/Del to overall struct   size  2 or 4 byte  + aligned and an ee size multiple
-	uint8_t res[EE_FULL_SIZE-2-sizeof(struct usr_data_t)];
+	uint8_t res[EE_ENTRY_SIZE-2-sizeof(struct usr_data_t)];
 	uint8_t Sum;  //!< keep this last use for entry validity  check ( mcu issue pwr lost during entry write)
 	uint8_t EeCtrl; //!< keep this first  /for free/use next management 0 deleted not use anymore 0xFF free (erased value) 0x5 vald dentry
 
