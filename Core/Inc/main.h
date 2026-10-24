@@ -36,6 +36,19 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+struct task_t {
+	union {
+		struct {
+			unsigned SG:1; // strain gauge actvbate by rtc wk up self clear when measure done
+			unsigned Lcd:1;
+			unsigned user:1;
+		};
+		uint32_t dw;
+	} active;
+};
+
+extern struct task_t task;
+#define Hx711SetTaskActive(...) task.active.SG=1
 
 /* USER CODE END ET */
 
