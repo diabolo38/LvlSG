@@ -258,6 +258,12 @@ struct UsrTask_t {
 	#define	USER_OFF_MSEC	5000 //for debug dev use 5 sec
 } UsrTask = { .OnTime= 1000*15 };
 
+struct TUiItem_t ConfMenu[] = {
+		[0]= { .first =1, .has_sub =0, .fmt_arg = "stat clear"},
+
+
+		[0]= { .last =1, .has_sub =0, },
+};
 void InteractiveEnd(){
 	LcdPwrDown();       // turn lcd off
 	task.active.user =0;
@@ -294,7 +300,6 @@ void EnterStop(){
 	__HAL_GPIO_EXTI_CLEAR_IT(USR_BUT_Pin);
 	HAL_NVIC_ClearPendingIRQ(USR_BUT_IRQN);
 	HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
-;
 
 	SetLed(1); // turn led off
 	RtcSetNextWake();
@@ -363,7 +368,7 @@ int main(void)
   HAL_Delay(2); //Sensure we is down on  boot
 
   //strat in user interactive mode led on
-  task.active.user = 1 ; // keep mcu not sleeping at boot seethis can help debuger atatchement after reser button issue if we enter stop to fast
+  task.active.user = 1 ; // keep mcu not sleeping at boot it can help debuger connect after reset button issue if we enter stop to fast
   LcdPwrOn(); // boot up with lcd
   SetLed(0);   // is revert led ctrl 0= on
   HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
