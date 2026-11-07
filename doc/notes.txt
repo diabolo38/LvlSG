@@ -1,35 +1,75 @@
-   
+
 UI 
 ===
 
-item
------
+fonts 
+Font_6x8
+Font_7x10
+Font_11x18
+Font_16x26
+Font_16x24
+
+
+genric ui rules/idea
+-------------------------
+nothing more tan 5/6 sec " exit this level" 
+   back or exit to main ui   
+   if a button is down flasg it (no action on release)
+   
+blink => list of str, pos, attr (rev, normal) , max char ?
+[acrtive] blink, for menu with list  revert is better ?
+ 
+long action done on 1st t > long still press ?
+rel after/long no effect (but keep ui active)
+rel ! after long => action short 
+
+Main screen
+-------------
+1234567890123456   16x(6,7,8) or  12(x10)
+
+||  20/02-17:20 (?)       <= ? when not set/pwr lost
+||  Lvl 80%
+||  Ft  10x                <= fill total 
+||  lf/e 100 4d/h          <= last filling % in day/h
+||  le/f 4                 <= prev last empty  in day
+on/cfg           graph/-  <= l r  short direct action
+
+short/long 
+short = on.do() / long = cfg.do() enter 
+
+graph view
+-------------
+lvl vs time plot (day) last 31/32
+
+       *  *  *
+     *        ****
+   *
+  20feb       20mar
+  z+/exit       z-/-
+
+ 
+date/time pannel
+--------------
+
+  [01] jan 2026
+  18h45m30s  
+ 
+-/next          +/save 
+
+
+
+
+Conf pannel
+---------------------
+[stat clear]
+on time => 10 , 20 .... , 120 
+date/time  => Month, Day, Hr, Mn
 Cal 0 => set 0% empty from cur value
 cal x% =>  10%, 20% , ..100%  steps => set  % from cur value
-auto => on, off (togle)
-man => on/off 
-pulse on time => acrtvate for fixed time 
-pulse time => 10 , 20 .... , 120 
-reset stat
-
-short + next item 
-  
-  AAAA  
-  BBBB 
-  CCCC
+prev/exit      next/set
 
 
-  [BBBB]  -> B1111 , B2222
-  CCCC
-  
-        |BBB| revert full ine /Center 
-   [1111] 
-   222 
-   333   [] slow blink
-   
-long => activate , item  blink get underline(blink)
-long is active (pressed for > 1sec ) visual effect (no more blink/underline ?) so user can release  
-nothing more tan 5/6 sec " exit this level" back or exit to main ui  
+
    
  LCD Intrerface 
  ===============

@@ -70,9 +70,11 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define USR_BUT_Pin GPIO_PIN_2
-#define USR_BUT_GPIO_Port GPIOA
-#define USR_BUT_EXTI_IRQn EXTI2_IRQn
+#define L_BUT_Pin GPIO_PIN_2
+#define L_BUT_GPIO_Port GPIOA
+#define L_BUT_EXTI_IRQn EXTI2_IRQn
+#define R_BUT_Pin GPIO_PIN_3
+#define R_BUT_GPIO_Port GPIOA
 #define LCD_PWR2_Pin GPIO_PIN_3
 #define LCD_PWR2_GPIO_Port GPIOB
 #define LCD_PWR1_Pin GPIO_PIN_4
@@ -81,7 +83,8 @@ void Error_Handler(void);
 #define LCD_PWR0_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-#define USR_BUT_IRQN EXTI2_IRQn
+#define R_BUT_IRQN EXTI2_IRQn
+#define L_BUT_IRQN EXTI3_IRQn
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

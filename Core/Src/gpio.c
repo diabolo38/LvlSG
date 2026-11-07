@@ -50,22 +50,22 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LCD_PWR1_Pin|LCD_PWR0_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, LCD_PWR2_Pin|LCD_PWR1_Pin|LCD_PWR0_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : USR_BUT_Pin */
-  GPIO_InitStruct.Pin = USR_BUT_Pin;
+  /*Configure GPIO pin : L_BUT_Pin */
+  GPIO_InitStruct.Pin = L_BUT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(USR_BUT_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(L_BUT_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LCD_PWR2_Pin */
-  GPIO_InitStruct.Pin = LCD_PWR2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(LCD_PWR2_GPIO_Port, &GPIO_InitStruct);
+  /*Configure GPIO pin : R_BUT_Pin */
+  GPIO_InitStruct.Pin = R_BUT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(R_BUT_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LCD_PWR1_Pin LCD_PWR0_Pin */
-  GPIO_InitStruct.Pin = LCD_PWR1_Pin|LCD_PWR0_Pin;
+  /*Configure GPIO pins : LCD_PWR2_Pin LCD_PWR1_Pin LCD_PWR0_Pin */
+  GPIO_InitStruct.Pin = LCD_PWR2_Pin|LCD_PWR1_Pin|LCD_PWR0_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

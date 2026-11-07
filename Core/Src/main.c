@@ -177,7 +177,7 @@ void StopResume(){
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if(GPIO_Pin == USR_BUT_Pin){
+  if(GPIO_Pin == R_BUT_Pin || GPIO_Pin == L_BUT_Pin){
 	  StopResume();
 	  task.active.user = 1; //safer that ony relying i/o chg is seen on the main loop
   }
@@ -251,12 +251,40 @@ void RtcSetNextWake(){
 
 }
 
+void dumb(){
+
+}
+#include "tui.h"
+#define HAS_PANNELS 1
+#if HAS_PANNELS
+
+void MainRShort() __attribute__((alias("dumb")));
+void MainRLong() __attribute__((alias("dumb")));
+void MainLShort() __attribute__((alias("dumb")));
+void MainLLong() __attribute__((alias("dumb")));
+
+const struct Panel2B_t Pannels[] = {
+		{ .RgtA={.Short=MainRShort, .Long=MainRLong} , .LftA={.Short=MainLShort, .Long=MainLLong}},
+};
+// 24972	    164	   3404
+const struct Panel2B_t *CurPannel=Pannels;
+#else
+//   24944	    160	   3408
+const struct Panel2B_t *CurPannel=NULL;
+#endif
+
 struct UsrTask_t {
-	unsigned PrevBut : 1;
-	uint32_t TikcChg; //tick last user buttton chg /Activate
-	uint32_t OnTime;
+	unsigned ButChg:1;
+	unsigned WakeUp :1 ;
+
+	uint32_t TikcChg;
+
+	uint32_t OnTime; //time to stay one w/o button chg
 	#define	USER_OFF_MSEC	5000 //for debug dev use 5 sec
 } UsrTask = { .OnTime= 1000*15 };
+
+
+
 
 struct TUiItem_t ConfMenu[] = {
 		[0]= { .first =1, .has_sub =0, .fmt_arg = "stat clear"},
@@ -264,20 +292,75 @@ struct TUiItem_t ConfMenu[] = {
 
 		[0]= { .last =1, .has_sub =0, },
 };
+
 void InteractiveEnd(){
 	LcdPwrDown();       // turn lcd off
 	task.active.user =0;
 }
 
+struct ButCtrl_t ButL={ .GpioPin= L_BUT_Pin, .Port=L_BUT_GPIO_Port};
+struct ButCtrl_t ButR={ .GpioPin= R_BUT_Pin, .Port=R_BUT_GPIO_Port}; //todo new button
+
+int ButGet(struct ButCtrl_t *but){
+	return HAL_GPIO_ReadPin(but->Port, but->GpioPin)!= 0;
+}
+
+int  ButProc( struct ButCtrl_t *but, const struct ButAction_t  *act ){
+	int v, chg;
+	uint32_t now=HAL_GetTick();
+	v = HAL_GPIO_ReadPin(but->Port, but->GpioPin)!= 0;
+	chg = v != but->val;
+	if( chg && now -  but->TimActive < 2 ){
+		//ignore/debounce wait it get stable (yet the initial chg get captured)
+		return 1;
+	}
+
+	if( chg ){
+		if( v == 0 && ! but->LongDone ){
+			//release short
+			 if( act->Short)
+				 act->Short();
+		}
+		but->LongDone = 0;
+		but->TimActive = now;
+	}
+	else {
+		if( v  && but->val ){
+			//stayu press long
+			if( but->LongDone == 0 &&  now - but->TimActive > BUT_LONG_TIME(but)){
+				//long
+				 but->LongDone = 1;
+				 if( act->Long)
+					  act->Long();
+			}
+		}
+	}
+
+	but->val = v;
+	return chg;
+}
+
 void Task_User(){
 	uint32_t now=HAL_GetTick();
 
-	int but = HAL_GPIO_ReadPin(USR_BUT_GPIO_Port, USR_BUT_Pin) != 0;
-	if( but != UsrTask.PrevBut ){
-		//mark  Activation
-		UsrTask.TikcChg = now;
 
+	const struct Panel2B_t *pannel= Pannels; //todo select active
+	if( UsrTask.WakeUp ){
+		UsrTask.ButChg =1;
+		if( ButGet(&ButL) == 0 && ButGet(&ButR)==0 ){
+			//force sleep for 2 ms avoid bounce
+			HAL_Delay(2);
+			UsrTask.WakeUp = 0;
+		}
+		//skip button action on pwd down exit  til button get back idddle
+	}
+	else {
+		UsrTask.ButChg = ButProc(&ButL, &pannel->LftA);
+		UsrTask.ButChg|= ButProc(&ButR, &pannel->RgtA); //ony if ni chg yet avoid pannel chg by b1 and b2
+	}
+	if( UsrTask.ButChg ){
 		task.active.user = 1;
+		UsrTask.TikcChg = now;
 		LcdPwrOn(); 	//if lcd was off it will kick the display update/Refresh if on nothing
 	}
 	else {
@@ -288,7 +371,6 @@ void Task_User(){
 			}
 		}
 	}
-	UsrTask.PrevBut = but;
 }
 
 
@@ -297,12 +379,19 @@ void EnterStop(){
 	Hx711PwrDown(&hx711);
 
 	HAL_SuspendTick();
-	__HAL_GPIO_EXTI_CLEAR_IT(USR_BUT_Pin);
-	HAL_NVIC_ClearPendingIRQ(USR_BUT_IRQN);
-	HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
+#if 0 // needed only if irq is disabled at pwr up exit
+	__HAL_GPIO_EXTI_CLEAR_IT(R_BUT_Pin);
+	HAL_NVIC_ClearPendingIRQ(R_BUT_IRQN);
+	HAL_NVIC_EnableIRQ(R_BUT_IRQN);
 
+	__HAL_GPIO_EXTI_CLEAR_IT(L_BUT_Pin);
+	HAL_NVIC_ClearPendingIRQ(L_BUT_IRQN);
+	HAL_NVIC_EnableIRQ(L_BUT_IRQN);
+#endif
 	SetLed(1); // turn led off
+	UsrTask.WakeUp = 1;
 	RtcSetNextWake();
+
 	if( Dbg.StopMode ){
 		HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 	}
@@ -371,7 +460,8 @@ int main(void)
   task.active.user = 1 ; // keep mcu not sleeping at boot it can help debuger connect after reset button issue if we enter stop to fast
   LcdPwrOn(); // boot up with lcd
   SetLed(0);   // is revert led ctrl 0= on
-  HAL_NVIC_EnableIRQ(USR_BUT_IRQN);
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -381,9 +471,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if( HAL_GPIO_ReadPin(USR_BUT_GPIO_Port, USR_BUT_Pin) != 0){
-		  task.active.user=1;
-	  }
 	  if( Dbg.TogleLed ) {
 		  Dbg.TogleLed =0;
 		  ToggleLed();
