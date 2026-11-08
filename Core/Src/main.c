@@ -126,30 +126,6 @@ void LcdPwrDown(){
 
 }
 
-void LcdUpdate(){
-	char s[32];
-	int g, dg;
-	if( lcd.PwrOn != 0 && lcd.Update){
-		ssd1306_Fill(Black);
-		ssd1306_SetCursor(32, 0);
-		g = (int)hx711.Weight/1000;
-		dg = (hx711.Weight - g*1000 )/100;
-		sprintf(s,"w %d.%d", g, dg);
-		ssd1306_WriteString(s, Font_7x10, White);
-		ssd1306_SetCursor(32, 11);
-		sprintf(s,"r %x", (unsigned)hx711.Value);
-		ssd1306_WriteString(s, Font_7x10, White);
-		// current lvl % value raw ?  drawing ?
-		// pump on time
-		// total run time ?
-		ssd1306_UpdateScreen();
-
-	}
-	lcd.Update = 0; //clr req even we are off
-}
-
-
-
 //use pwr stabdy bit ( hse/hsi t reset may to be used if hse useed) in what case clk config whall be set back
 int GetStopState(){
 	if (__HAL_PWR_GET_FLAG(PWR_CSR_SBF) != RESET) {
@@ -251,27 +227,209 @@ void RtcSetNextWake(){
 
 }
 
+
+const char *_MotnthStr[12]={
+		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+		"Jul","Aug", "Sep", "Oct", "Nov", "Dec"
+};
+const char * MonthName(uint8_t m){
+	if( m< 1) m= 1;
+	else if( m > 12 ) m= 12;
+	return _MotnthStr[m-1];
+}
+
 void dumb(){
 
 }
 #include "tui.h"
-#define HAS_PANNELS 1
-#if HAS_PANNELS
 
-void MainRShort() __attribute__((alias("dumb")));
+uint8_t CurPannel;
+enum PanIndex_e {
+	MainPannel = 0,
+	CfglPannel,
+	CalPannel,
+	TimePannel,
+
+};
+
 void MainRLong() __attribute__((alias("dumb")));
 void MainLShort() __attribute__((alias("dumb")));
-void MainLLong() __attribute__((alias("dumb")));
 
-const struct Panel2B_t Pannels[] = {
-		{ .RgtA={.Short=MainRShort, .Long=MainRLong} , .LftA={.Short=MainLShort, .Long=MainLLong}},
+int CalPercent;
+
+void CalLMinus(){
+	CalPercent = CalPercent<=5 ? 0 : CalPercent-5;
+	lcd.Update = 1;
+}
+
+void CalExit(){
+	//we may set value saved when we enter
+	CurPannel = CfglPannel;
+	lcd.Update = 1;
+}
+void CalLAdd(){
+	CalPercent = CalPercent>=95 ? 100 : CalPercent+5;
+	lcd.Update = 1;
+}
+void CalSet(){
+	// todo set calibraton value
+	CurPannel = CfglPannel;
+	lcd.Update = 1;
+}
+
+enum CfgIndex_e {
+	CfgOnTime = 0,
+	CfgDate,
+	CfgCal0,
+	CfgCalX,
+	CfgWrap = CfgCalX+1,
 };
-// 24972	    164	   3404
-const struct Panel2B_t *CurPannel=Pannels;
-#else
-//   24944	    160	   3408
-const struct Panel2B_t *CurPannel=NULL;
-#endif
+
+const char *CfgItems[]= {
+	[CfgOnTime]= "On time",
+	[CfgDate]  = "Date&Time",
+	[CfgCal0]  = "Cal 0%",
+	[CfgCalX]  = "Cal x%",
+};
+
+struct  {
+	uint8_t CurIndex;
+}Cfg;
+
+void TimeEnter();
+
+void CfgPrev(){
+	Cfg.CurIndex = Cfg.CurIndex > 0 ?  Cfg.CurIndex-1 : CfgWrap-1;
+	lcd.Update = 1;
+}
+void CfgExit(){
+	CurPannel = MainPannel;
+	lcd.Update = 1;
+}
+
+void CfgNext(){
+	Cfg.CurIndex = (Cfg.CurIndex+1) % CfgWrap;
+	lcd.Update = 1;
+}
+
+void CfgSet(){
+	//todo base on index set next pannel or direct action );
+	switch ( Cfg.CurIndex ){
+	case CfgOnTime : break;
+	case CfgDate:  CurPannel= TimePannel, TimeEnter(); break;
+//TODO
+	}
+	lcd.Update = 1;
+}
+
+void CfgDraw(){
+	int Top=0, color, i;
+	//todo if we have more than 5 line we'll need to handle scroll via top top+5 not to go more than last
+	for( i=0; i<MIN(5,CfgWrap); i++){
+		ssd1306_SetCursor(2, i*10);
+		color = Cfg.CurIndex == i+Top ? Black : White;
+		//align/fill based on longest string to sel ?
+		ssd1306_WriteString((char*)CfgItems[Top+i], Font_7x10, color);
+	}
+}
+
+uint8_t DTSel;
+enum DTSel_e  {
+	DT_Day = 0,
+	DT_Month,
+	DT_Year,
+	DT_Hour,
+	DT_Min,
+	DT_Wrap = DT_Min+1
+};
+
+struct DTEdit_t {
+	uint8_t d,mo,y,h,min,sec;
+}DTEdit;
+struct DTVal_t {
+	uint8_t  L,H;
+	uint8_t *p;
+};
+struct DTVal_t  DTv[]={
+	[DT_Day]  = { .p= &DTEdit.d, .L=1, .H=31, }, //clip must be adjust on every month set and  28/29 for feb */ },
+	[DT_Month]= { .p= &DTEdit.mo, .L=1, .H=12, },
+	[DT_Year]=  { .p= &DTEdit.y, . L=26, .H=99, },
+	[DT_Hour]=  { .p= &DTEdit.h, . L=0, .H=23, },
+	[DT_Min ]=  { .p= &DTEdit.min,. L=0,.H=59, },
+};
+
+void DTMonthAdj(){
+	DTv[DT_Day].H = DTEdit.mo==2 ? 29 : DTEdit.mo&1 ? 31:30;
+
+}
+void TimeMinus(){
+	*DTv[DTSel].p = *DTv[DTSel].p <=  DTv[DTSel].L ?  DTv[DTSel].H:  *DTv[DTSel].p-1;
+	if(DTSel==DT_Month){
+		DTMonthAdj();
+	}
+
+}
+void TimeNext(){
+	DTSel = (DTSel+1)%DT_Wrap;
+}
+
+void TimeMore(){
+	*DTv[DTSel].p = *DTv[DTSel].p >=  DTv[DTSel].H ?  DTv[DTSel].L:  *DTv[DTSel].p+1;
+	if(DTSel==DT_Month){
+		DTMonthAdj();
+	}
+}
+
+void TimeEnter(){
+	RTC_DateTypeDef Date;
+	RTC_TimeTypeDef Time;
+	HAL_RTC_GetDate(&hrtc,&Date,  RTC_FORMAT_BIN);
+	DTEdit.d=Date.Date;
+	DTEdit.mo=Date.Month;
+	DTEdit.y=Date.Year;
+	HAL_RTC_GetTime(&hrtc, &Time, RTC_FORMAT_BIN);
+	DTEdit.h=Time.Hours;
+	DTEdit.min=Time.Minutes;
+	DTMonthAdj();
+	DTSel=DT_Day;
+}
+
+void TimeSave(){
+	RTC_DateTypeDef Date;
+	RTC_TimeTypeDef Time;
+
+	Date.Date= DTEdit.d;
+	Date.Month= DTEdit.mo;
+	Date.Year= DTEdit.y;
+	//set the current value and set cfg pannel
+	HAL_RTC_SetDate(&hrtc,&Date,  RTC_FORMAT_BIN);
+	Time.Hours=DTEdit.h;
+	Time.Minutes=DTEdit.min;
+
+	HAL_RTC_SetTime(&hrtc, &Time, RTC_FORMAT_BIN);
+	CurPannel=CfglPannel;
+}
+
+void TimeDraw(){
+	char s[10];
+	ssd1306_SetCursor(16, 16);
+	sprintf(s,"%2d", DTEdit.d);
+	ssd1306_WriteString(s,Font_7x10, DTSel== DT_Day ? Black: White);
+	ssd1306_WriteString("-",Font_7x10, White);
+	sprintf(s,"%3s", MonthName(DTEdit.mo));
+	ssd1306_WriteString(s,Font_7x10, DTSel== DT_Month ? Black: White);
+	ssd1306_WriteString("-",Font_7x10, White);
+	sprintf(s,"20%02d", DTEdit.y);
+	ssd1306_WriteString(s, Font_7x10, DTSel== DT_Year ? Black: White);
+
+	ssd1306_SetCursor(16, 32);
+	sprintf(s,"%2d", DTEdit.h);
+	ssd1306_WriteString(s,Font_7x10, DTSel== DT_Hour ? Black: White);
+	ssd1306_WriteString(":",Font_7x10, White);
+	sprintf(s,"%02d", DTEdit.min);
+	ssd1306_WriteString(s,Font_7x10, DTSel== DT_Min ? Black: White);
+
+}
 
 struct UsrTask_t {
 	unsigned ButChg:1;
@@ -284,8 +442,6 @@ struct UsrTask_t {
 } UsrTask = { .OnTime= 1000*15 };
 
 
-
-
 struct TUiItem_t ConfMenu[] = {
 		[0]= { .first =1, .has_sub =0, .fmt_arg = "stat clear"},
 
@@ -296,55 +452,64 @@ struct TUiItem_t ConfMenu[] = {
 void InteractiveEnd(){
 	LcdPwrDown();       // turn lcd off
 	task.active.user =0;
+	CurPannel=MainPannel;
 }
 
 struct ButCtrl_t ButL={ .GpioPin= L_BUT_Pin, .Port=L_BUT_GPIO_Port};
 struct ButCtrl_t ButR={ .GpioPin= R_BUT_Pin, .Port=R_BUT_GPIO_Port}; //todo new button
 
-int ButGet(struct ButCtrl_t *but){
-	return HAL_GPIO_ReadPin(but->Port, but->GpioPin)!= 0;
+int32_t W0=320*1000;        //sg unit aprox 1mg , 1m diam 8 320g
+int32_t W100=(320-50)*1000; // 50g less when fully under water
+
+uint8_t l0x= 16; // x0 of text
+uint8_t l0y = 2; //y0 of text
+uint8_t Lvl0x= 0 , Lvl0y=0 , LvlW=6, LvlH=64-12;
+
+
+void MainOn(){
+	//todo set on
+}
+void MainLLong(){
+	CurPannel=CfglPannel;
+}
+void MainDraw(){
+	char s[32];
+	RTC_TimeTypeDef time;
+	RTC_DateTypeDef date;
+	int Lvl100;
+
+	HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+	HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+	sprintf(s,"%2d-%3s %2d:%02d", date.Date, MonthName(date.Month),
+			time.Hours, time.Minutes);
+	ssd1306_SetCursor(l0x, l0y);
+	ssd1306_WriteString(s,Font_7x10, White);
+
+	//if on prevent pwr off and show left time ?
+	Lvl100=100*(hx711.Weight-W0)/(W100-W0);
+	if( Lvl100<=0 )
+		Lvl100=0;
+	else if( Lvl100>100)
+		Lvl100=100;
+
+	ssd1306_DrawRectangle(Lvl0x, Lvl0y                      , Lvl0x+LvlW, Lvl0y+LvlH, White);
+	ssd1306_FillRectangle(Lvl0x, Lvl0y+(100-Lvl100)*LvlH/100, Lvl0x+LvlW, Lvl0y+LvlH, White);
+
+	ssd1306_SetCursor(l0x, l0y+10);
+	sprintf(s,"Niv %3d%%", Lvl100);
+	ssd1306_WriteString(s,Font_7x10, White);
 }
 
-int  ButProc( struct ButCtrl_t *but, const struct ButAction_t  *act ){
-	int v, chg;
-	uint32_t now=HAL_GetTick();
-	v = HAL_GPIO_ReadPin(but->Port, but->GpioPin)!= 0;
-	chg = v != but->val;
-	if( chg && now -  but->TimActive < 2 ){
-		//ignore/debounce wait it get stable (yet the initial chg get captured)
-		return 1;
-	}
-
-	if( chg ){
-		if( v == 0 && ! but->LongDone ){
-			//release short
-			 if( act->Short)
-				 act->Short();
-		}
-		but->LongDone = 0;
-		but->TimActive = now;
-	}
-	else {
-		if( v  && but->val ){
-			//stayu press long
-			if( but->LongDone == 0 &&  now - but->TimActive > BUT_LONG_TIME(but)){
-				//long
-				 but->LongDone = 1;
-				 if( act->Long)
-					  act->Long();
-			}
-		}
-	}
-
-	but->val = v;
-	return chg;
-}
+const struct Panel2B_t Pannels[] = {
+	[MainPannel] = {.Draw=MainDraw, .LftA={.Short=MainOn   , .SName="On"  , .Long=MainLLong, .LName="Cfg"} , .RgtA={.Short=NULL, .SName ="Graph",  /* no long */} },
+	[CfglPannel] = {.Draw=CfgDraw , .LftA={.Short= CfgPrev , .SName="Prev", .Long=CfgExit  , .LName="Exit"}, .RgtA={.Short= CfgNext  , .SName="Next" ,  .Long = CfgSet, .LName="Set" } },
+	[CalPannel]  = {.Draw= NULL,    .LftA={.Short=CalLMinus, .SName="-",    .Long=CalExit,   .LName="Exit"}, .RgtA={.Short=CalLAdd  ,  .SName="+",      .Long=CalSet  , .LName="Set"  } },
+	[TimePannel] = {.Draw= TimeDraw,.LftA={.Short=TimeMinus, .SName="-",    .Long=TimeNext,  .LName="Next"}, .RgtA={.Short=TimeMore ,  .SName="+",      .Long=TimeSave, .LName="Save"  } }
+};
 
 void Task_User(){
 	uint32_t now=HAL_GetTick();
-
-
-	const struct Panel2B_t *pannel= Pannels; //todo select active
+	const struct Panel2B_t *pannel;
 	if( UsrTask.WakeUp ){
 		UsrTask.ButChg =1;
 		if( ButGet(&ButL) == 0 && ButGet(&ButR)==0 ){
@@ -355,6 +520,8 @@ void Task_User(){
 		//skip button action on pwd down exit  til button get back idddle
 	}
 	else {
+		//do menu text
+		pannel = Pannels+CurPannel;
 		UsrTask.ButChg = ButProc(&ButL, &pannel->LftA);
 		UsrTask.ButChg|= ButProc(&ButR, &pannel->RgtA); //ony if ni chg yet avoid pannel chg by b1 and b2
 	}
@@ -373,6 +540,35 @@ void Task_User(){
 	}
 }
 
+void LcdUpdate(){
+	const struct Panel2B_t *pannel;
+
+	if( lcd.PwrOn != 0 && lcd.Update){
+		ssd1306_Fill(Black);
+
+		pannel= Pannels+CurPannel; //todo select active
+		Pannel2B_DoHelp(pannel);
+		if( pannel->Draw){
+			pannel->Draw();
+		}
+#if 0
+		ssd1306_SetCursor(32, 0);
+		g = (int)hx711.Weight/1000;
+		dg = (hx711.Weight - g*1000 )/100;
+		sprintf(s,"w %d.%d", g, dg);
+		ssd1306_WriteString(s, Font_7x10, White);
+		ssd1306_SetCursor(32, 11);
+		sprintf(s,"r %x", (unsigned)hx711.Value);
+		ssd1306_WriteString(s, Font_7x10, White);
+#endif
+		// current lvl % value raw ?  drawing ?
+		// pump on time
+		// total run time ?
+		ssd1306_UpdateScreen();
+
+	}
+	lcd.Update = 0; //clr req even we are off
+}
 
 void EnterStop(){
 	//Ensure wake condition  button rtc (if not yet on)

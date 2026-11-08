@@ -45,9 +45,18 @@ lvl vs time plot (day) last 31/32
      *        ****
    *
   20feb       20mar
-  z+/exit       z-/-
+  z-/exit       z+/-
 
- 
+
+Conf pannel
+---------------------
+[stat clear]
+on time => 10 , 20 .... , 120 
+date/time  => date time pannel
+Cal 0 => set 0% empty from cur value
+cal x% =>  10%, 20% , ..100%  steps => set  % from cur value
+prev/exit      next/set
+
 date/time pannel
 --------------
 
@@ -56,19 +65,12 @@ date/time pannel
  
 -/next          +/save 
 
-
-
-
-Conf pannel
----------------------
-[stat clear]
-on time => 10 , 20 .... , 120 
-date/time  => Month, Day, Hr, Mn
-Cal 0 => set 0% empty from cur value
-cal x% =>  10%, 20% , ..100%  steps => set  % from cur value
-prev/exit      next/set
-
-
+cal pannel
+---------------
+ weight x% (fm current value)
+   10%
+   
+ -/exit  +/set
 
    
  LCD Intrerface 
