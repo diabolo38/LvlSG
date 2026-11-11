@@ -85,6 +85,10 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 #define R_BUT_IRQN EXTI2_IRQn
 #define L_BUT_IRQN EXTI3_IRQn
+
+#ifndef ARRAY_SIZE
+#	define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
+#endif
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

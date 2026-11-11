@@ -65,7 +65,7 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-int MeasPeriodSec=60;
+int MeasPeriodSec=5;//shall be 1min ode debuhing issue bad value set 5
 
 
 
@@ -79,7 +79,7 @@ uint8_t CkBuf[64];
 uint8_t DiBuf[64];
 struct Hx711_t hx711 = {
 		.hspi = &hspi1, .CkBuf=CkBuf, .DiBuf=DiBuf,
-		.RawOffset = 0xedb8bc //todo get this from eeprom or calib
+		.RawOffset = 0 //todo get this from eeprom or calib
 		// 0xedba39 next day ref
 		// 0xee5fca ~ 40g
 };
@@ -149,8 +149,6 @@ void StopResume(){
 
 }
 
-
-
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == R_BUT_Pin || GPIO_Pin == L_BUT_Pin){
@@ -158,19 +156,28 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	  task.active.user = 1; //safer that ony relying i/o chg is seen on the main loop
   }
 }
-
+int CalPercent;
+int32_t W0=15651106;        //sg unit aprox 1mg , 1m diam 8 320g
+int32_t W100=15579225-10*1000; // 50g less when fully under water
 
 struct SgTask_t {
 #define SG_REP_4_AVG	3
 	int RepMeas; // on wake up run  this amount of measure in cont mode then step to single/off
-
+	int Sum;
+	int Avg;
+	int n;
+	int skiped;
 } Task_SG;;
 
 void SgWakeUp(){
 	if( task.active.SG ==0   ){
 		task.active.SG = 1;
 		//shall we take care we lay be in interactive mdoe so already in cont mode and averaged value ?
-		Task_SG.RepMeas = SG_REP_4_AVG;
+#if 0
+		Task_SG.Sum=0; // reset average:
+		Task_SG.n = 0;
+#endif
+		Task_SG.RepMeas = SG_REP_4_AVG; //wait to acquire new avg but keep old average (almost same if we reset)
 		hx711.ContMode = 1;
 	}
 }
@@ -255,10 +262,25 @@ enum PanIndex_e {
 void MainRLong() __attribute__((alias("dumb")));
 void MainLShort() __attribute__((alias("dumb")));
 
-int CalPercent;
+
+void CalShow(){
+	char s[32];
+	ssd1306_Fill(Black);
+	ssd1306_SetCursor(10, 10);
+	sprintf(s,"W0 %d", (int)W0);
+	ssd1306_WriteString(s,Font_7x10, White);
+	ssd1306_SetCursor(10, 25);
+	sprintf(s,"Wf %d", (int)W100);
+	ssd1306_WriteString(s,Font_7x10, White);
+	ssd1306_SetCursor(10, 45);
+	sprintf(s,"Dif %d", (int)(W0-W100));
+	ssd1306_WriteString(s,Font_7x10, White);
+	ssd1306_UpdateScreen();
+	HAL_Delay(1000);
+}
 
 void CalLMinus(){
-	CalPercent = CalPercent<=5 ? 0 : CalPercent-5;
+	CalPercent = CalPercent<=20 ? 20 : CalPercent-5;
 	lcd.Update = 1;
 }
 
@@ -273,10 +295,36 @@ void CalLAdd(){
 }
 void CalSet(){
 	// todo set calibraton value
+	if( Task_SG.RepMeas == 0){
+		// ensure we have averaged enough
+		// point 100% fm val assuming cuurent 0 is valid
+		W100=(Task_SG.Avg - W0)*100 / CalPercent;
+		//TODO store in ee
+		CalShow();
+	}
 	CurPannel = CfglPannel;
 	lcd.Update = 1;
 }
 
+void CalDraw(){
+	char s[32];
+	ssd1306_SetCursor(10, 10);
+	sprintf(s,"SG %d", Task_SG.Avg);
+	ssd1306_WriteString(s,Font_7x10, White);
+	ssd1306_SetCursor(10, 30);
+	sprintf(s,"Set %03d", CalPercent);
+	ssd1306_WriteString(s,Font_7x10, White);
+	ssd1306_SetCursor(10, 40);
+
+	//kill the average ?
+}
+
+
+void DoCal0(){
+	W0=Task_SG.Avg;
+
+	CalShow();
+}
 enum CfgIndex_e {
 	CfgOnTime = 0,
 	CfgDate,
@@ -316,6 +364,8 @@ void CfgSet(){
 	//todo base on index set next pannel or direct action );
 	switch ( Cfg.CurIndex ){
 	case CfgOnTime : break;
+	case CfgCal0:  DoCal0(); break;
+	case CfgCalX:  CurPannel= CalPannel; break;
 	case CfgDate:  CurPannel= TimePannel, TimeEnter(); break;
 //TODO
 	}
@@ -458,9 +508,6 @@ void InteractiveEnd(){
 struct ButCtrl_t ButL={ .GpioPin= L_BUT_Pin, .Port=L_BUT_GPIO_Port};
 struct ButCtrl_t ButR={ .GpioPin= R_BUT_Pin, .Port=R_BUT_GPIO_Port}; //todo new button
 
-int32_t W0=320*1000;        //sg unit aprox 1mg , 1m diam 8 320g
-int32_t W100=(320-50)*1000; // 50g less when fully under water
-
 uint8_t l0x= 16; // x0 of text
 uint8_t l0y = 2; //y0 of text
 uint8_t Lvl0x= 0 , Lvl0y=0 , LvlW=6, LvlH=64-12;
@@ -472,6 +519,21 @@ void MainOn(){
 void MainLLong(){
 	CurPannel=CfglPannel;
 }
+int GetLevel100(){
+	int Lvl100,w;
+	if( Task_SG.RepMeas ){
+		return -1;
+	}
+	w = Task_SG.Avg <= 0 ? 0 : Task_SG.Avg;
+	//if on prevent pwr off and show left time ?
+	Lvl100=100*(w-W0)/(W100-W0);
+	if( Lvl100<=0 )
+		Lvl100=0;
+	else if( Lvl100>100)
+		Lvl100=100;
+	return Lvl100;
+}
+int lvl_err;
 void MainDraw(){
 	char s[32];
 	RTC_TimeTypeDef time;
@@ -484,26 +546,24 @@ void MainDraw(){
 			time.Hours, time.Minutes);
 	ssd1306_SetCursor(l0x, l0y);
 	ssd1306_WriteString(s,Font_7x10, White);
+	Lvl100 = GetLevel100();
+	if( Lvl100>= 0 ){
+		ssd1306_DrawRectangle(Lvl0x, Lvl0y                      , Lvl0x+LvlW, Lvl0y+LvlH, White);
+		ssd1306_FillRectangle(Lvl0x, Lvl0y+(100-Lvl100)*LvlH/100, Lvl0x+LvlW, Lvl0y+LvlH, White);
+		ssd1306_SetCursor(l0x, l0y+10);
+		sprintf(s,"Niv %3d%%", Lvl100);
+		ssd1306_WriteString(s,Font_7x10, White);
+	}
+	if( Lvl100 == 0){
+		lvl_err++;
+	}
 
-	//if on prevent pwr off and show left time ?
-	Lvl100=100*(hx711.Weight-W0)/(W100-W0);
-	if( Lvl100<=0 )
-		Lvl100=0;
-	else if( Lvl100>100)
-		Lvl100=100;
-
-	ssd1306_DrawRectangle(Lvl0x, Lvl0y                      , Lvl0x+LvlW, Lvl0y+LvlH, White);
-	ssd1306_FillRectangle(Lvl0x, Lvl0y+(100-Lvl100)*LvlH/100, Lvl0x+LvlW, Lvl0y+LvlH, White);
-
-	ssd1306_SetCursor(l0x, l0y+10);
-	sprintf(s,"Niv %3d%%", Lvl100);
-	ssd1306_WriteString(s,Font_7x10, White);
 }
 
 const struct Panel2B_t Pannels[] = {
 	[MainPannel] = {.Draw=MainDraw, .LftA={.Short=MainOn   , .SName="On"  , .Long=MainLLong, .LName="Cfg"} , .RgtA={.Short=NULL, .SName ="Graph",  /* no long */} },
 	[CfglPannel] = {.Draw=CfgDraw , .LftA={.Short= CfgPrev , .SName="Prev", .Long=CfgExit  , .LName="Exit"}, .RgtA={.Short= CfgNext  , .SName="Next" ,  .Long = CfgSet, .LName="Set" } },
-	[CalPannel]  = {.Draw= NULL,    .LftA={.Short=CalLMinus, .SName="-",    .Long=CalExit,   .LName="Exit"}, .RgtA={.Short=CalLAdd  ,  .SName="+",      .Long=CalSet  , .LName="Set"  } },
+	[CalPannel]  = {.Draw= CalDraw, .LftA={.Short=CalLMinus, .SName="-",    .Long=CalExit,   .LName="Exit"}, .RgtA={.Short=CalLAdd  ,  .SName="+",      .Long=CalSet  , .LName="Set"  } },
 	[TimePannel] = {.Draw= TimeDraw,.LftA={.Short=TimeMinus, .SName="-",    .Long=TimeNext,  .LName="Next"}, .RgtA={.Short=TimeMore ,  .SName="+",      .Long=TimeSave, .LName="Save"  } }
 };
 
@@ -595,21 +655,53 @@ void EnterStop(){
 		__WFI();
 	}
 }
+struct St_t {
+	int avg;
+	int w;
+	int tick;
+	uint16_t r, n, lvl;
+};
+int ln;
+struct St_t dlog[128];
 
 void OnDataRdy(){
 	lcd.Update = 1; // mark lcd to be update
 	hx711.DataRdy = 0 ;
+	if(  hx711.Weight == 0xFFFFFF ){
+		//smthg wrong we read all 1
+		Task_SG.skiped++;
+		if(  Task_SG.skiped>2)
+			return;
+		return;
+	}
 	//handle pump activation on/off  timer when lvl is high
+	if( Task_SG.n < SG_REP_4_AVG ){
+		Task_SG.n++;
+	}
+	else {
+		Task_SG.Sum = Task_SG.Sum*(SG_REP_4_AVG-1)/SG_REP_4_AVG;
+	}
+	Task_SG.Sum +=  hx711.Weight;
+	Task_SG.Avg = Task_SG.Sum /  Task_SG.n;
+
+
 	if( Task_SG.RepMeas  ){
 	  Task_SG.RepMeas--;
 	  // hx711.ContMode = 0; // after this swicth to power down
 	  // => this set and measure can race with user change and brake "60us" pwr donw pulse rules if not handle
-	  // make the magaement more complex it is much safer/Simpler to be alays in cont mode and force pd when to stop
-	  // with limited risk sck high > 60 us if we ahve already set next wake and took long
+	  // make the magaement more complex it is much safer/Simpler to be always in cont mode and force pd when to stop
+	  // with limited risk sck high > 60 us if we have already set next wake and took long
 	}
 	if( Task_SG.RepMeas ==0 ){
-	  task.active.SG = 0; // out ourself off
+	  task.active.SG = 0; //put ourself off
 	}
+	int e=ln%ARRAY_SIZE(dlog);
+	dlog[e].avg= Task_SG.Avg ;
+	dlog[e].w= hx711.Weight;
+	dlog[e].n= ln;
+	dlog[e].tick= HAL_GetTick();
+	dlog[e].lvl= GetLevel100();
+	ln++;
 }
 /* USER CODE END 0 */
 
@@ -653,6 +745,7 @@ int main(void)
   HAL_Delay(2); //Sensure we is down on  boot
 
   //strat in user interactive mode led on
+  SgWakeUp(); //init restart measure avg
   task.active.user = 1 ; // keep mcu not sleeping at boot it can help debuger connect after reset button issue if we enter stop to fast
   LcdPwrOn(); // boot up with lcd
   SetLed(0);   // is revert led ctrl 0= on

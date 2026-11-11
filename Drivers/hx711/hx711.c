@@ -17,6 +17,9 @@ int Hx711Read( struct Hx711_t *dev, int RateCtrl){
 	now = HAL_GetTick();
 	if( RateCtrl && now- dev->LastTick   < 200 )
 		return 1;
+	if( now- dev->LastTick  < 10)
+		return 1; // somehow hne we rd to fast few ls  after the very first
+	//dev keeo rdy low but itas we clk to read it urn hi and send all 1
 	dev->LastTick = now;
 	Hx711SetTaskActive(*dev);
 
@@ -36,7 +39,7 @@ int Hx711Read( struct Hx711_t *dev, int RateCtrl){
 		dev->CkBuf[0]=0;
 		rc = HAL_SPI_TransmitReceive(dev->hspi, dev->CkBuf, dev->DiBuf, 1, 2);
 			//todo handle err ?
-	}while( dev->DiBuf[0]&1 && rc == 0);
+	}while( dev->DiBuf[0]&& rc == 0);
 	// rc != 0 mean error in spi ?
 	//fixe we shall rise sck for non cont mode
 	if( rc ){
