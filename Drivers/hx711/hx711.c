@@ -92,6 +92,7 @@ int Hx711PwrDown(struct Hx711_t  *dev){
 void Hx711_SPiComplete(struct Hx711_t  *dev){
 	int i;
 	dev->RdInProgress = 0;
+	dev->LastTick = HAL_GetTick();
 
 	int c, bpos, bit, bitm;
 	uint32_t v;
@@ -108,7 +109,11 @@ void Hx711_SPiComplete(struct Hx711_t  *dev){
 	}
 	dev->Value = v;
 	dev->Weight = dev->Value - dev ->RawOffset;
-
+#if 0
+	if( dev->Weight == 0xFFFFFF ){
+		DbgIOSet(-1);
+	}
+#endif
 	if( !dev->ContMode ){
 		dev->state= Hx711_PwrDown;
 		//fixme to pd before pd handlin ?ng

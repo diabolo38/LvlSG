@@ -103,7 +103,14 @@ F103 mosi is std  input not alt ,  io rd can be used direct to check the rdy
 timings
 --------
   pd to data rdy => ~500ms 
-  back to back dt rdy 100ms 10HZ rate
+  back to back dt rdy 100ms/200ms 10HZ rate
+  
+Read issue
+----------
+  after pd exit and 1st data read if read the io=0 so hx711 say it's read
+  if a new read is doen fast (<10ms) hx711 io go high straigh aftetr clk but it wan't send any data
+  rdy by io low seam not very safe  better/Safer  min delay of 10ms helped to avoid it
+  also checkin the reaf is full 1  and discard avoid bad effect on the app.
   
 FSM draft 
 ----------
@@ -128,6 +135,7 @@ FSM draft
                   | (scl down /activate) 
                   |
                   [wait rdy]
+               
  
  power consumption
  =================

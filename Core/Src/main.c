@@ -65,8 +65,19 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-int MeasPeriodSec=5;//shall be 1min ode debuhing issue bad value set 5
+#ifdef DO_DBG
+void DbgIOSet(int x){
+	if(  x>= 0 )
+		HAL_GPIO_WritePin(DBG_IO_GPIO_Port,DBG_IO_Pin,x&1);
+	else {
+		HAL_GPIO_TogglePin(DBG_IO_GPIO_Port,DBG_IO_Pin);
+	}
+}
+#else
+#	define DbgIOSet(x) (void)0
+#endif
 
+int MeasPeriodSec=60;//shall be 1min ode debuhing issue bad value set 5
 
 
 /**SPI1 GPIO Configuration
@@ -90,7 +101,6 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
 
 	}
 }
-
 
 volatile struct Dbg_t  {
 	unsigned TogleLed :1;
@@ -156,7 +166,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	  task.active.user = 1; //safer that ony relying i/o chg is seen on the main loop
   }
 }
-int CalPercent;
+#define MIN_CAL_PERCENT 20
+int CalPercent=MIN_CAL_PERCENT; //not less than min
 int32_t W0=15651106;        //sg unit aprox 1mg , 1m diam 8 320g
 int32_t W100=15579225-10*1000; // 50g less when fully under water
 
@@ -280,7 +291,7 @@ void CalShow(){
 }
 
 void CalLMinus(){
-	CalPercent = CalPercent<=20 ? 20 : CalPercent-5;
+	CalPercent = CalPercent<=MIN_CAL_PERCENT ? MIN_CAL_PERCENT : CalPercent-5;
 	lcd.Update = 1;
 }
 
@@ -489,7 +500,7 @@ struct UsrTask_t {
 
 	uint32_t OnTime; //time to stay one w/o button chg
 	#define	USER_OFF_MSEC	5000 //for debug dev use 5 sec
-} UsrTask = { .OnTime= 1000*15 };
+} UsrTask = { .OnTime= 1000*5 };
 
 
 struct TUiItem_t ConfMenu[] = {
@@ -554,7 +565,7 @@ void MainDraw(){
 		sprintf(s,"Niv %3d%%", Lvl100);
 		ssd1306_WriteString(s,Font_7x10, White);
 	}
-	if( Lvl100 == 0){
+	else {
 		lvl_err++;
 	}
 
@@ -655,14 +666,8 @@ void EnterStop(){
 		__WFI();
 	}
 }
-struct St_t {
-	int avg;
-	int w;
-	int tick;
-	uint16_t r, n, lvl;
-};
-int ln;
-struct St_t dlog[128];
+
+
 
 void OnDataRdy(){
 	lcd.Update = 1; // mark lcd to be update
@@ -670,8 +675,7 @@ void OnDataRdy(){
 	if(  hx711.Weight == 0xFFFFFF ){
 		//smthg wrong we read all 1
 		Task_SG.skiped++;
-		if(  Task_SG.skiped>2)
-			return;
+		DbgIOSet(-1);
 		return;
 	}
 	//handle pump activation on/off  timer when lvl is high
@@ -695,13 +699,6 @@ void OnDataRdy(){
 	if( Task_SG.RepMeas ==0 ){
 	  task.active.SG = 0; //put ourself off
 	}
-	int e=ln%ARRAY_SIZE(dlog);
-	dlog[e].avg= Task_SG.Avg ;
-	dlog[e].w= hx711.Weight;
-	dlog[e].n= ln;
-	dlog[e].tick= HAL_GetTick();
-	dlog[e].lvl= GetLevel100();
-	ln++;
 }
 /* USER CODE END 0 */
 
