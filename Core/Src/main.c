@@ -59,7 +59,7 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void SgWakeUp();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -78,7 +78,7 @@ void DbgIOSet(int x){
 #endif
 
 int MeasPeriodSec=60;//shall be 1min ode debuhing issue bad value set 5
-
+int _Stoped=0;
 
 /**SPI1 GPIO Configuration
 PA5     ------> SPI1_SCK
@@ -136,14 +136,12 @@ void LcdPwrDown(){
 
 }
 
-//use pwr stabdy bit ( hse/hsi t reset may to be used if hse useed) in what case clk config whall be set back
+//use pwr stabdy bit ( hse/hsi  reset may be used (if hse useed) in what case clk config shall be set back
+//stanby bit is only for standby state not stop and can(t be used , stop can be s/w driver as ram retained
 int GetStopState(){
-	if (__HAL_PWR_GET_FLAG(PWR_CSR_SBF) != RESET) {
-	    // The microcontroller exited from Standby mode
-	    __HAL_PWR_CLEAR_FLAG(PWR_CSR_SBF); // Clear the flag for future checks
-	    return -1;
-	}
-	return 0;
+	int s= _Stoped;
+	_Stoped = 0;
+	return s;
 
 }
 
@@ -154,6 +152,7 @@ void StopResume(){
 #if 0
 		SystemClock_Config ();
 #endif
+		SgWakeUp();
 		SYS_STAT(Resume++);
 	}
 
@@ -180,26 +179,26 @@ struct SgTask_t {
 	int skiped;
 } Task_SG;;
 
-void SgWakeUp(){
-	if( task.active.SG ==0   ){
-		task.active.SG = 1;
-		//shall we take care we lay be in interactive mdoe so already in cont mode and averaged value ?
-#if 0
-		Task_SG.Sum=0; // reset average:
-		Task_SG.n = 0;
-#endif
-		Task_SG.RepMeas = SG_REP_4_AVG; //wait to acquire new avg but keep old average (almost same if we reset)
-		hx711.ContMode = 1;
-	}
-}
-
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc){
 	StopResume();
-	SgWakeUp();
+
 	task.active.SG = 1;
 	SetLed(0); //put on
 }
 
+void SgWakeUp(){
+	if( task.active.SG ==0   ){
+		// TODO reset avg  only on pd exit we xan have rtc while on by user
+			task.active.SG = 1;
+			//shall we take care we lay be in interactive mdoe so already in cont mode and averaged value ?
+#if 0
+			Task_SG.Sum=0; // reset average:
+			Task_SG.n = 0;
+#endif
+			Task_SG.RepMeas = SG_REP_4_AVG; //wait to acquire new avg but keep old average (almost same if we reset)
+			hx711.ContMode = 1;
+	}
+}
 
 //in rfmaster proj the hal alarm was somehow not causing stop exit or has issue some extra code set alarm , exti irqhandled was used.
 // why ? extra overhead , "dhms" fromat of hal that was not folowed in rf master to get milli second precision ?
@@ -657,7 +656,7 @@ void EnterStop(){
 	SetLed(1); // turn led off
 	UsrTask.WakeUp = 1;
 	RtcSetNextWake();
-
+	_Stoped=1;
 	if( Dbg.StopMode ){
 		HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 	}
