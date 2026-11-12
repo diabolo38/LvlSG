@@ -288,6 +288,7 @@ void CalShow(){
 	ssd1306_WriteString(s,Font_7x10, White);
 	ssd1306_UpdateScreen();
 	HAL_Delay(1000);
+	lcd.Update = 1;
 }
 
 void CalLMinus(){
@@ -309,12 +310,11 @@ void CalSet(){
 	if( Task_SG.RepMeas == 0){
 		// ensure we have averaged enough
 		// point 100% fm val assuming cuurent 0 is valid
-		W100=(Task_SG.Avg - W0)*100 / CalPercent;
+		W100=(Task_SG.Avg - W0)*100 / CalPercent+W0;
 		//TODO store in ee
 		CalShow();
 	}
 	CurPannel = CfglPannel;
-	lcd.Update = 1;
 }
 
 void CalDraw(){
@@ -326,7 +326,6 @@ void CalDraw(){
 	sprintf(s,"Set %03d", CalPercent);
 	ssd1306_WriteString(s,Font_7x10, White);
 	ssd1306_SetCursor(10, 40);
-
 	//kill the average ?
 }
 
